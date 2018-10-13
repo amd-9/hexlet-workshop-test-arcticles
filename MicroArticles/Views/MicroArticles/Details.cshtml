@@ -1,0 +1,45 @@
+﻿@model MicroArticles.Models.MicroArticle
+
+@{
+    ViewData["Title"] = "Details";
+}
+
+<h2>Details</h2>
+
+<div>
+    <h4>MicroArticle</h4>
+    <hr />
+    <dl class="dl-horizontal">
+        <dt>
+            @Html.DisplayNameFor(model => model.Name)
+        </dt>
+        <dd>
+            @Html.DisplayFor(model => model.Name)
+        </dd>
+        <dt>
+            @Html.DisplayNameFor(model => model.Body)
+        </dt>
+        <dd>
+            @Html.DisplayFor(model => model.Body)
+        </dd>
+        <dt>
+            @Html.DisplayNameFor(model => model.ImageAddress)
+        </dt>
+        <dd>
+            @Html.DisplayFor(model => model.ImageAddress)
+        </dd>
+        <dt>
+            Image
+        </dt>
+        <dd>
+            <img src="@Url.Action("Download", "MicroArticles", new { fileName = Model.ImageFileName })" width="100px" height="100px" alt="Pet Image" />
+        </dd>
+        <dd>
+            @Html.ActionLink("Download image", "Download", "MicroArticles", new { fileName = Model.ImageFileName })
+        </dd>
+    </dl>
+</div>
+<div>
+    <a asp-action="Edit" asp-route-id="@Model.Id">Edit</a> |
+    <a asp-action="Index">Back to List</a>
+</div>
