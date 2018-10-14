@@ -1,13 +1,23 @@
-﻿using MicroArticles.Controllers;
+﻿using AngleSharp.Dom.Html;
+using AngleSharp.Extensions;
+using MicroArticles.Controllers;
 using MicroArticles.Models;
 using MicroArticles.Providers;
+using MicroArticles.Tests.Helpers;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
+using System.IO.Abstractions;
+using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Threading.Tasks;
 
 namespace MicroArticles.Tests
@@ -15,105 +25,91 @@ namespace MicroArticles.Tests
     [TestFixture]
     public class MicroArticlesController_Should
     {
-        private readonly IArticleFileProvider _fileProvider;
-        private readonly IStorageProvider storageProvider;
-        private readonly MicroArticlesContext _context;
+        private readonly WebApplicationFactory<Startup> _factory;
+        private HttpClient _client;
 
         public MicroArticlesController_Should()
         {
+            _factory = new MicroArticlesFactory<Startup>();
+        }
 
+        [SetUp]
+        public void Init()
+        {
             var fileProviderMock = new Mock<IArticleFileProvider>();
-            var storageProviderMock = new Mock<IStorageProvider>();
+            fileProviderMock.Setup(provider => provider.SaveFileFromUriAsync(It.IsAny<string>()))
+                .Returns(Task.FromResult("testFile"));
+
+            _client = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureTestServices(services =>
+                {
+                    services.AddScoped(serviceProvider => fileProviderMock.Object);
+                });
+            })
+            .CreateClient(new WebApplicationFactoryClientOptions
+            {
+                AllowAutoRedirect = false
+            });
         }
 
         [Test]
-        public async Task ReturnFileNameIsEmpty()
+        public async Task ReturnFileNameIsEmpty2()
         {
-            var options = new DbContextOptionsBuilder<MicroArticlesContext>()
-               .UseInMemoryDatabase(databaseName: "FileNameEmpty")
-               .Options;
+            var response = await _client.GetAsync("MicroArticles/Download");
 
-            using (var context = new MicroArticlesContext(options))
-            {
-                var controller = new MicroArticlesController(context, _fileProvider);
+            var content = await response.Content.ReadAsStringAsync();
 
-                var result = await controller.Download(string.Empty);
-                var contentResult = result as ContentResult;
+            Assert.AreEqual("Filename is empty", content);
 
-                Assert.AreEqual("Filename is empty", contentResult.Content);
-            }           
         }
 
         [Test]
         public async Task Index_ReturnsAViewResult_WithListOfMicroArticles()
         {
-            var options = new DbContextOptionsBuilder<MicroArticlesContext>()
-                .UseInMemoryDatabase(databaseName: "Index_Returns_List")
-                .Options;
+            var indexPage = await _client.GetAsync("MicroArticles/Index");
+            var content = await HtmlHelpers.GetDocumentAsync(indexPage);
 
-            using (var context = new MicroArticlesContext(options))
-            {
-                context.MicroArticle.Add(
-                    new MicroArticle
-                    {
-                        Id = Guid.NewGuid(),
-                        Name = "Mushrooms",
-                        Body = "Tasty",
-                        ImageAddress = "http://localhost/image1.jpg"
-                    }
-                 );
-                context.MicroArticle.Add(
-                    new MicroArticle
-                        {
-                            Id = Guid.NewGuid(),
-                            Name = "Donats",
-                            Body = "Tasty",
-                            ImageAddress = "http://localhost/image1.jpg"
-                        }
-                     );
 
-                context.SaveChanges();
+            var aritcleElements = content.QuerySelectorAll("tr.microArticle");
 
-                var controller = new MicroArticlesController(context, _fileProvider);
-                var result = await controller.Index();
-                
-                Assert.IsInstanceOf<ViewResult>(result);
-                var viewResult = result as ViewResult;
-
-                Assert.IsAssignableFrom<List<MicroArticle>>(viewResult.ViewData.Model);
-                var microArticles = viewResult.ViewData.Model as List<MicroArticle>;
-
-                Assert.AreEqual(2, microArticles.Count());
-            }
-
+            Assert.AreEqual(HttpStatusCode.OK, indexPage.StatusCode);
+            Assert.AreEqual(2, aritcleElements.Count());
         }
-        
+
         [Test]
         public async Task Edit_ReturnsNotFoundWhenArcticleWithIdNotExists()
         {
-            var options = new DbContextOptionsBuilder<MicroArticlesContext>()
-                .UseInMemoryDatabase(databaseName: "Edit_Returns_NotFound")
-                .Options;
+            var response = await _client.GetAsync($"MicroArticles/Edit/{Guid.NewGuid()}");
 
-            using (var context = new MicroArticlesContext(options))
-            {
-                context.MicroArticle.Add(
-                    new MicroArticle
-                    {
-                        Id = Guid.NewGuid(),
-                        Name = "Mushrooms",
-                        Body = "Tasty",
-                        ImageAddress = "http://localhost/image1.jpg"
-                    }
-                 );
+            Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
 
-                context.SaveChanges();
+        }
 
-                var controller = new MicroArticlesController(context, _fileProvider);
-                var result = await controller.Edit(Guid.NewGuid());
+        [Test]
+        public async Task CreateArticleAndRedirect()
+        {
+            var createPage = await _client.GetAsync("MicroArticles/Create");
+            var antiForgeryToken = await AntiForgeryHelper.ExtractAntiForgeryToken(createPage);
+            var content = await HtmlHelpers.GetDocumentAsync(createPage);
 
-                Assert.IsInstanceOf<NotFoundResult>(result);
-            }
+            var name = "Test";
+            var body = "Test";
+            var imageAdress = "http://localhost/image3.jpg";
+
+            //CreateArticle
+            var response = await _client.PostAsync("MicroArticles/Create", new FormUrlEncodedContent(
+                new Dictionary<string, string> {
+                    {"__RequestVerificationToken", antiForgeryToken},
+                    { "Name", name },
+                    { "Body", body },
+                    { "ImageAddress", imageAdress }})
+            );
+
+
+            Assert.AreEqual(HttpStatusCode.OK, createPage.StatusCode);
+            Assert.AreEqual(HttpStatusCode.Redirect, response.StatusCode);
+            Assert.AreEqual("/", response.Headers.Location.OriginalString);
         }
     }
 }

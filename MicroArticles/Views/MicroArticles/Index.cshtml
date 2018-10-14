@@ -32,7 +32,7 @@
     </thead>
     <tbody>
 @foreach (var item in Model) {
-        <tr>
+        <tr class="microArticle">
             <td>
                 <img src="@Url.Action("Download", "MicroArticles", new { fileName = item.ImageFileName })" width="100px" height="100px" alt="Pet Image" />
             </td>
